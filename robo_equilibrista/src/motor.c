@@ -76,113 +76,107 @@ void motor_set_speed(motor_t *motor, uint8_t speed) {
 }
 
 // --- Tarefa de Controle do Motor ---
-void vMotorControlTask(void *pvParameters) { // Renomeado de vMotorDemoTask
+void vMotorControlTask(void *pvParameters) {
     (void) pvParameters;
+  
+    float filtered_angle_pitch;
+    uint8_t current_motor_speed = 0;
 
-    float z_accel_value;
-    uint8_t current_speed = 0;
+    // Define o setpoint (ângulo desejado de equilíbrio)
+    const float DESIRED_ANGLE_SETPOINT = 0.0f;
 
-    // Limiares de sensibilidade para acionamento
-    const float FORWARD_THRESHOLD = -0.1f; // Se Z < -0.1, tombando para frente
-    const float BACKWARD_THRESHOLD = 0.1f; // Se Z > 0.1, tombando para trás
-    const float MAX_ACCEL_FOR_SPEED = 1.0f; // Aceleração máxima esperada para mapear para velocidade total
+    // Limiares de sensibilidade para acionamento (agora em graus)
+    const float ANGLE_THRESHOLD = 2.0f; // dead zone
+    const float MAX_ANGLE_DEVIATION = 30.0f; // Ângulo máximo esperado
 
     while (true) {
-        // Tenta receber um valor da fila. Espera por 10ms se a fila estiver vazia.
-        if (motor_control_queue != NULL && xQueueReceive(motor_control_queue, &z_accel_value, pdMS_TO_TICKS(10)) == pdPASS) {
+        if (motor_control_queue != NULL && xQueueReceive(motor_control_queue, &filtered_angle_pitch, pdMS_TO_TICKS(50)) == pdPASS) {
+            printf("Motor Control Task: Recebido Ângulo Filtrado = %.2f deg\n", filtered_angle_pitch);
 
-            // Lógica de controle simples baseada no eixo Z do acelerômetro
-            if (z_accel_value < FORWARD_THRESHOLD) { // Tombando para frente
-                motor_set_direction(&motor_left, true);
-                motor_set_direction(&motor_right, true);
+            // Calcula o erro: diferença entre o ângulo atual e o desejado
+            float error_angle = filtered_angle_pitch - DESIRED_ANGLE_SETPOINT;
 
-                // Mapeia a magnitude da inclinação para a velocidade
-                // Limita o valor para evitar velocidades excessivas com leituras extremas
-                float normalized_accel = fmin(fabs(z_accel_value), MAX_ACCEL_FOR_SPEED);
-                current_speed = (uint8_t)(normalized_accel / MAX_ACCEL_FOR_SPEED * 255);
-                current_speed = fmax(current_speed, 10); // Garante uma velocidade mínima para mover
+            if (fabs(error_angle) > ANGLE_THRESHOLD) {
+                
+                float normalized_error = fmin(fabs(error_angle), MAX_ANGLE_DEVIATION);
+                current_motor_speed = (uint8_t)(normalized_error / MAX_ANGLE_DEVIATION * 255);
+                current_motor_speed = fmax(current_motor_speed, 30); // Garante uma velocidade mínima para mover
 
-                motor_set_speed(&motor_left, current_speed);
-                motor_set_speed(&motor_right, current_speed);
-                printf("Tombando p/ FRENTE (Z=%.2f). Motores FRENTE com velocidade %d\n", z_accel_value, current_speed);
+                if (error_angle < 0) { // Robô tombando para FRENTE (ângulo negativo em relação ao setpoint)
+                    motor_set_direction(&motor_left, true);
+                    motor_set_direction(&motor_right, true);
+                    printf("Tombando p/ FRENTE (Ângulo=%.2f). Motores FRENTE com velocidade %d\n", filtered_angle_pitch, current_motor_speed);
+                } else { // Robô tombando para TRÁS (ângulo positivo em relação ao setpoint)
+                    motor_set_direction(&motor_left, false);
+                    motor_set_direction(&motor_right, false);
+                    printf("Tombando p/ TRÁS (Ângulo=%.2f). Motores TRÁS com velocidade %d\n", filtered_angle_pitch, current_motor_speed);
+                }
+                motor_set_speed(&motor_left, current_motor_speed);
+                motor_set_speed(&motor_right, current_motor_speed);
 
-            } else if (z_accel_value > BACKWARD_THRESHOLD) { // Tombando para trás
-                motor_set_direction(&motor_left, false);
-                motor_set_direction(&motor_right, false);
-
-                // Mapeia a magnitude da inclinação para a velocidade
-                float normalized_accel = fmin(fabs(z_accel_value), MAX_ACCEL_FOR_SPEED);
-                current_speed = (uint8_t)(normalized_accel / MAX_ACCEL_FOR_SPEED * 255);
-                current_speed = fmax(current_speed, 10); // Garante uma velocidade mínima para mover
-
-                motor_set_speed(&motor_left, current_speed);
-                motor_set_speed(&motor_right, current_speed);
-                printf("Tombando p/ TRÁS (Z=%.2f). Motores TRÁS com velocidade %d\n", z_accel_value, current_speed);
-
-            } else { // Robô está relativamente equilibrado
+            } else { // Robô está dentro do limiar de equilíbrio
                 motor_stop(&motor_left);
                 motor_stop(&motor_right);
-                // printf("Equilibrado (Z=%.2f). Motores PARADOS.\n", z_accel_value); // Comentado para não poluir o console
+                printf("Equilibrado (Ângulo=%.2f). Motores PARADOS.\n", filtered_angle_pitch);
             }
         } else {
-            // Se não recebeu nada da fila, aguarda um pouco antes de tentar novamente
-            vTaskDelay(pdMS_TO_TICKS(10));
+            vTaskDelay(pdMS_TO_TICKS(50)); // Aguarda 50ms se a fila estiver vazia
         }
     }
 }
 
-// void vMotorDemoTask(void *pvParameters) {
-//     (void) pvParameters;
+void vMotorDemoTask(void *pvParameters) {
+    (void) pvParameters;
 
-//     uint8_t speed = 0;
-//     const uint8_t speed_step = 5;
-//     const TickType_t delay_ms_per_step = pdMS_TO_TICKS(300);
+    uint8_t speed = 0;
+    const uint8_t speed_step = 5;
+    const TickType_t delay_ms_per_step = pdMS_TO_TICKS(300);
 
-//     while (true) {
-//         // --- Demonstração de aumento de velocidade do Motor Direito (Motor B) para frente ---
-//         printf("\nMotor Direito: Aumentando velocidade para frente...\n");
-//         motor_set_direction(&motor_right, true);
-//         motor_set_direction(&motor_left, true);
-//         for (speed = 0; speed < 255; speed += speed_step) {
-//             motor_set_speed(&motor_right, speed);
-//             motor_set_speed(&motor_left, speed);
-//             vTaskDelay(delay_ms_per_step);
-//         }
-//         printf("Motor Direito: Velocidade máxima (255) alcançada (Frente).\n");
-//         vTaskDelay(pdMS_TO_TICKS(1500));
+    while (true) {
+        // --- Demonstração de aumento de velocidade do Motor Direito (Motor B) para frente ---
+        printf("\nMotor Direito: Aumentando velocidade para frente...\n");
+        motor_set_direction(&motor_right, true);
+        motor_set_direction(&motor_left, true);
+        for (speed = 0; speed < 255; speed += speed_step) {
+            motor_set_speed(&motor_right, speed);
+            motor_set_speed(&motor_left, speed);
+            vTaskDelay(delay_ms_per_step);
+        }
+        printf("Motor Direito: Velocidade máxima (255) alcançada (Frente).\n");
+        vTaskDelay(pdMS_TO_TICKS(1500));
 
-//         // --- Demonstração de diminuição de velocidade do Motor Direito para frente ---
-//         printf("\nMotor Direito: Diminuindo velocidade para frente...\n");
-//         for (speed = 255; speed > speed_step; speed -= speed_step) {
-//             motor_set_speed(&motor_right, speed);
-//             motor_set_speed(&motor_left, speed);
-//             vTaskDelay(delay_ms_per_step);
-//         }
-//         motor_stop(&motor_right);
-//         printf("Motor Direito: Parado (0) (Frente).\n");
-//         vTaskDelay(pdMS_TO_TICKS(3000));
+        // --- Demonstração de diminuição de velocidade do Motor Direito para frente ---
+        printf("\nMotor Direito: Diminuindo velocidade para frente...\n");
+        for (speed = 255; speed > speed_step; speed -= speed_step) {
+            motor_set_speed(&motor_right, speed);
+            motor_set_speed(&motor_left, speed);
+            vTaskDelay(delay_ms_per_step);
+        }
+        motor_stop(&motor_right);
+        printf("Motor Direito: Parado (0) (Frente).\n");
+        vTaskDelay(pdMS_TO_TICKS(3000));
 
-//         // --- Demonstração de aumento de velocidade do Motor Direito para trás ---
-//         printf("\nMotor Direito: Aumentando velocidade para trás...\n");
-//         motor_set_direction(&motor_right, false);
-//         motor_set_direction(&motor_left, false);
-//         for (speed = 0; speed <= 255; speed += speed_step) {
-//             motor_set_speed(&motor_right, speed);
-//             motor_set_speed(&motor_left, speed);
-//             vTaskDelay(delay_ms_per_step);
-//         }
-//         printf("Motor Direito: Velocidade máxima (255) alcançada (Trás).\n");
-//         vTaskDelay(pdMS_TO_TICKS(1500));
+        // --- Demonstração de aumento de velocidade do Motor Direito para trás ---
+        printf("\nMotor Direito: Aumentando velocidade para trás...\n");
+        motor_set_direction(&motor_right, false);
+        motor_set_direction(&motor_left, false);
+        for (speed = 0; speed <= 255; speed += speed_step) {
+            motor_set_speed(&motor_right, speed);
+            motor_set_speed(&motor_left, speed);
+            vTaskDelay(delay_ms_per_step);
+        }
+        printf("Motor Direito: Velocidade máxima (255) alcançada (Trás).\n");
+        vTaskDelay(pdMS_TO_TICKS(1500));
 
-//         // --- Demonstração de diminuição de velocidade do Motor Direito para trás ---
-//         printf("\nMotor Direito: Diminuindo velocidade para trás...\n");
-//         for (speed = 255; speed >= speed_step; speed -= speed_step) {
-//             motor_set_speed(&motor_right, speed);
-//             motor_set_speed(&motor_left, speed);
-//             vTaskDelay(delay_ms_per_step);
-//         }
-//         motor_stop(&motor_right);
-//         printf("Motor Direito: Parado (0) (Trás).\n");
-//         vTaskDelay(pdMS_TO_TICKS(3000));
-//     }
-// }
+        // --- Demonstração de diminuição de velocidade do Motor Direito para trás ---
+        printf("\nMotor Direito: Diminuindo velocidade para trás...\n");
+        for (speed = 255; speed >= speed_step; speed -= speed_step) {
+            motor_set_speed(&motor_right, speed);
+            motor_set_speed(&motor_left, speed);
+            vTaskDelay(delay_ms_per_step);
+        }
+        motor_stop(&motor_right);
+        printf("Motor Direito: Parado (0) (Trás).\n");
+        vTaskDelay(pdMS_TO_TICKS(3000));
+    }
+}

@@ -5,6 +5,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include <math.h>
 
 // Variáveis globais
 static float current_accel_scale_factor = ACCEL_SENSITIVITY_2G;
@@ -12,6 +13,9 @@ static float current_gyro_scale_factor = GYRO_SENSITIVITY_250DPS;
 
 // Variável para armazenar o handle da fila
 static QueueHandle_t mpu6050_data_queue = NULL; 
+
+// Instância do filtro complementar
+static balancer_filter_t main_balancer_filter;
 
 // --- Implementação da Função para Setar a Fila ---
 void mpu6050_set_data_queue(QueueHandle_t queue_handle) {
@@ -27,6 +31,9 @@ void vMPU6050Task(void *pvParameters) {
     float accel_g[3];
     float gyro_dps[3];
 
+    // Inicializa o filtro complementar
+    filter_init(&main_balancer_filter, 0.050f, 0.98f); // dt=50ms, alpha=0.98
+
     while (true) {
         mpu6050_read_raw_data(accel_raw, gyro_raw);
 
@@ -39,6 +46,9 @@ void vMPU6050Task(void *pvParameters) {
         gyro_dps[1] = (float)gyro_raw[1] / current_gyro_scale_factor;
         gyro_dps[2] = (float)gyro_raw[2] / current_gyro_scale_factor;
 
+        // Atualiza o filtro complementar com os novos dados
+        filter_update(&main_balancer_filter, accel_g, gyro_dps);
+
         // Envia o valor do eixo Z do acelerômetro para a fila
         if (mpu6050_data_queue != NULL) {
             float z_accel_value = accel_g[2];
@@ -47,8 +57,9 @@ void vMPU6050Task(void *pvParameters) {
 
         printf("Acel: X=%7.2f g, Y=%7.2f g, Z=%7.2f g | ", accel_g[0], accel_g[1], accel_g[2]);
         printf("Giro: X=%7.2f dps, Y=%7.2f dps, Z=%7.2f dps\n", gyro_dps[0], gyro_dps[1], gyro_dps[2]);
-
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        printf("Filtro Pitch: %7.2f deg\n", main_balancer_filter.angle_pitch);
+        
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 

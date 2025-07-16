@@ -7,6 +7,7 @@
 #include "hardware/i2c.h"
 #include "FreeRTOS.h"
 #include "queue.h"
+#include "filter.h"
 
 // --- Constantes Físicas ---
 #define GRAVITY 9.81f // Aceleração da gravidade em m/s^2

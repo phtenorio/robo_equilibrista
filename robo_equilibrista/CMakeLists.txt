@@ -50,7 +50,8 @@ pico_sdk_init()
 add_executable(robo_equilibrista
          src/main.c
          src/mpu6050.c
-         src/hardware_init.c )
+         src/hardware_init.c
+         src/motor.c )
 
 pico_set_program_name(robo_equilibrista "robo_equilibrista")
 pico_set_program_version(robo_equilibrista "0.1")

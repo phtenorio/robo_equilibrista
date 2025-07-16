@@ -4,10 +4,19 @@
 #include "hardware/i2c.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
 
 // Variáveis globais
 static float current_accel_scale_factor = ACCEL_SENSITIVITY_2G;
 static float current_gyro_scale_factor = GYRO_SENSITIVITY_250DPS;
+
+// Variável para armazenar o handle da fila
+static QueueHandle_t mpu6050_data_queue = NULL; 
+
+// --- Implementação da Função para Setar a Fila ---
+void mpu6050_set_data_queue(QueueHandle_t queue_handle) {
+    mpu6050_data_queue = queue_handle;
+}
 
 // --- Implementação da Tarefa MPU6050 ---
 void vMPU6050Task(void *pvParameters) {
@@ -29,6 +38,12 @@ void vMPU6050Task(void *pvParameters) {
         gyro_dps[0] = (float)gyro_raw[0] / current_gyro_scale_factor;
         gyro_dps[1] = (float)gyro_raw[1] / current_gyro_scale_factor;
         gyro_dps[2] = (float)gyro_raw[2] / current_gyro_scale_factor;
+
+        // Envia o valor do eixo Z do acelerômetro para a fila
+        if (mpu6050_data_queue != NULL) {
+            float z_accel_value = accel_g[2];
+            xQueueSend(mpu6050_data_queue, &z_accel_value, 0);
+        }
 
         printf("Acel: X=%7.2f g, Y=%7.2f g, Z=%7.2f g | ", accel_g[0], accel_g[1], accel_g[2]);
         printf("Giro: X=%7.2f dps, Y=%7.2f dps, Z=%7.2f dps\n", gyro_dps[0], gyro_dps[1], gyro_dps[2]);

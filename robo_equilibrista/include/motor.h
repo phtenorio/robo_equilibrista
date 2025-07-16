@@ -3,6 +3,8 @@
 
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
+#include "FreeRTOS.h"
+#include "queue.h"
 
 // Definição dos pinos GPIO para a ponte H L298N
 #define MOTOR_DEFAULT_LEFT_IN1_PIN  8
@@ -55,6 +57,17 @@ void motor_stop(motor_t *motor);
  */
 void motor_set_speed(motor_t *motor, uint8_t speed);
 
-void vMotorDemoTask(void *pvParameters);
+/**
+ * @brief Seta o handle da fila para a tarefa de controle do motor.
+ * @param queue_handle O handle da fila para receber os dados do acelerômetro.
+ */
+void motor_set_control_queue(QueueHandle_t queue_handle);
+
+/**
+ * @brief Tarefa FreeRTOS para controlar os motores com base nos dados do acelerômetro.
+ */
+void vMotorControlTask(void *pvParameters); // Renomeado de vMotorDemoTask
+
+// void vMotorDemoTask(void *pvParameters);
 
 #endif // MOTOR_H

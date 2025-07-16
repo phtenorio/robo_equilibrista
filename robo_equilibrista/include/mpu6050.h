@@ -3,8 +3,10 @@
 #ifndef MPU6050_H
 #define MPU6050_H
 
-#include <stdint.h> // Para int16_t, uint8_t
-#include "hardware/i2c.h" // Para i2c_inst_t
+#include <stdint.h>
+#include "hardware/i2c.h"
+#include "FreeRTOS.h"
+#include "queue.h"
 
 // --- Constantes Físicas ---
 #define GRAVITY 9.81f // Aceleração da gravidade em m/s^2
@@ -70,8 +72,14 @@ void mpu6050_configure_sensor(mpu6050_accel_fsr_t accel_fsr, mpu6050_gyro_fsr_t 
 void mpu6050_read_raw_data(int16_t accel[3], int16_t gyro[3]);
 
 /**
+ * @brief Seta o handle da fila para a tarefa do MPU6050.
+ * @param queue_handle O handle da fila para enviar os dados do acelerômetro.
+ */
+void mpu6050_set_data_queue(QueueHandle_t queue_handle);
+
+/**
  * @brief Tarefa FreeRTOS para leitura e impressão dos dados do MPU6050.
- * Esta tarefa também realiza a conversão para unidades reais.
+ * Esta tarefa também realiza a conversão para unidades reais e envia o Z-accel para a fila.
  */
 void vMPU6050Task(void *pvParameters);
 
